@@ -448,11 +448,9 @@ Public Class OracleComm
                                         End Try
                                     End If
                                 Next
-                            Next
-                            '2015-06-30 Motech Json
+                            Next                            
                             JsonString = ObjJson.JsonWrite(MyDT)
-                        ElseIf MyDT.Rows.Count = 0 Then
-                            '2015-06-30 Motech Json
+                        ElseIf MyDT.Rows.Count = 0 Then                            
                             JsonString = ObjJson.JsonWrite(MyDT)
                             ''必須要回傳特定的欄位字串讓CMMSLib可以轉回含欄位的DataTable
                             'Dim ht As New Hashtable
@@ -491,11 +489,9 @@ Public Class OracleComm
                     If MyDT IsNot Nothing Then
                         If MyDT.Rows.Count > 0 Then
                             Dim dv As DataView = MyDT.DefaultView
-                            dv.RowFilter = filter
-                            '2015-06-30 Motech Json
+                            dv.RowFilter = filter                            
                             JsonString = ObjJson.JsonWrite(dv.ToTable)
-                        ElseIf MyDT.Rows.Count = 0 Then
-                            '2015-06-30 Motech Json
+                        ElseIf MyDT.Rows.Count = 0 Then                            
                             JsonString = ObjJson.JsonWrite(MyDT)
                             ''必須要回傳特定的欄位字串讓CMMSLib可以轉回含欄位的DataTable
                             'Dim ht As New Hashtable
