@@ -1,0 +1,546 @@
+Imports System.Data
+Imports System.Data.OracleClient
+Imports Newtonsoft.Json
+Imports Newtonsoft.Json.Linq
+Imports System.Text
+Imports System.IO
+Imports System.Collections.Generic
+
+Public Class OracleComm
+    Implements IDisposable
+
+    Private disposed As Boolean = False        ' To detect redundant calls
+
+#Region " Const "
+    Private strCN As String = "Data Source={0};User ID={1};Password={2};Persist Security Info=True;unicode=true" ';Min Pool Size=5;Max Pool Size=400
+#End Region
+
+    Private cnORA As OracleConnection = Nothing
+    Private myTrans As OracleTransaction = Nothing
+    Private myCommand As OracleCommand = Nothing
+
+    Public Sub New(ByVal TNSName As String, ByVal UserName As String, ByVal UserPWD As String)
+        strCN = String.Format(strCN, TNSName, UserName, UserPWD)
+        cnORA = New OracleConnection(strCN) ' 建立 OracleConnection 執行個體
+        cnORA.Open()
+        Me.CreateTransaction()
+    End Sub
+
+    Public Sub New(ByVal IsCreateTransaction As Boolean)
+        ' Alton: for the procddure → Begin to End
+        cnORA = New OracleConnection(strCN) ' 建立 OracleConnection 執行個體
+        cnORA.Open()
+        If IsCreateTransaction = False Then
+            Me.CreateTransaction()
+        End If
+    End Sub
+
+    ' IDisposable
+    Protected Overridable Sub Dispose(ByVal disposing As Boolean)
+        '2014-01-21 微調資源釋放的順序
+        If Not Me.disposed Then
+            '先清空資源
+            Try
+                If Me.myTrans IsNot Nothing Then
+                    Try
+                        Me.myTrans.Rollback()
+                    Catch ex As Exception
+                    End Try
+                    Me.myTrans.Dispose()
+                End If
+            Catch ex As Exception
+            End Try
+            Try
+                If Me.myCommand IsNot Nothing Then Me.myCommand.Dispose()
+            Catch ex As Exception
+            End Try
+            Try
+                If Me.cnORA IsNot Nothing Then Me.cnORA.Close() : Me.cnORA.Dispose()
+            Catch ex As Exception
+            End Try
+            If disposing Then
+                ' TODO: free unmanaged resources when explicitly calledb
+            Else
+                ' TODO: free shared unmanaged resources
+                '再釋放資源
+                Try
+                    Me.myTrans = Nothing
+                Catch ex As Exception
+                End Try
+                Try
+                    Me.myCommand = Nothing
+                Catch ex As Exception
+                End Try
+                Try
+                    Me.cnORA = Nothing
+                Catch ex As Exception
+                End Try
+            End If
+        End If
+        Me.disposed = True
+    End Sub
+
+#Region " Public Mothod - Transaction"
+
+    Private Sub CreateTransaction()
+        Try
+            'myCommand = Nothing
+            'myCommand = New OracleCommand(
+            myTrans = cnORA.BeginTransaction(System.Data.IsolationLevel.ReadCommitted)
+            'myCommand.Transaction = myTrans
+        Catch ex As Exception
+            Throw ex
+        End Try
+
+    End Sub
+
+    Public Sub CommitTransaction()
+        Try
+            myTrans.Commit()
+            'cnORA.Close()
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Sub
+
+    Public Sub RollbackTransaction()
+        Try
+            myTrans.Rollback()
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Sub
+
+#End Region
+
+#Region " IDisposable Support "
+    ' This code added by Visual Basic to correctly implement the disposable pattern.
+    Public Sub Dispose() Implements IDisposable.Dispose
+        ' Do not change this code.  Put cleanup code in Dispose(ByVal disposing As Boolean) above.
+        Dispose(True)
+        GC.SuppressFinalize(Me)
+    End Sub
+
+    Protected Overrides Sub Finalize()
+        ' Do not change this code.  Put cleanup code in Dispose(ByVal disposing As Boolean) above.
+        Dispose(False)
+        MyBase.Finalize()
+    End Sub
+#End Region
+
+    Public Function BindDataSet(ByVal Strsql As String) As DataSet
+
+        If String.IsNullOrEmpty(Strsql) Then
+            Return Nothing
+        End If
+
+        Dim MyDS As New DataSet
+        Dim Mydt As New DataTable
+
+        Try
+
+            Me.myCommand = New OracleCommand(Strsql, cnORA, Me.myTrans)
+            Me.myCommand.CommandType = CommandType.Text
+            'Me.myCommand.CommandText = Strsql
+
+            Try
+                Dim daORA As New OracleDataAdapter(Me.myCommand)
+
+                daORA.Fill(MyDS) ' 將資料填至資料集
+                If MyDS.Tables.Count > 0 Then
+                    Dim dt As DataTable = MyDS.Tables(0)
+                    For Each r As DataRow In dt.Rows
+                        For i As Integer = 0 To dt.Columns.Count - 1
+                            If IsDBNull(r.Item(i)) Then
+                                Try
+                                    If dt.Columns(i).DataType.ToString = "System.Decimal" Then
+                                        r.Item(i) = 0
+                                    ElseIf dt.Columns(i).DataType.ToString = "System.String" Then
+                                        r.Item(i) = ""
+                                    ElseIf dt.Columns(i).DataType.ToString = "System.DateTime" Then
+                                        r.Item(i) = Date.MinValue 'CType("0001-00-00 00:00:00", Date) '
+                                    Else
+                                        r.Item(i) = ""
+                                    End If
+                                Catch ex As Exception
+                                    r.Item(i) = ""
+                                End Try
+                            End If
+
+                            'If dt.Columns(i).DataType.ToString = "System.DateTime" Then
+                            '    r.Item(i) = Format(r.Item(i), "yyyy-MM-dd HH:mm:ss")
+                            'End If
+                        Next
+                    Next
+                Else
+                    MyDS.Tables.Add(Mydt)
+                End If
+                Return MyDS
+            Catch ex As Exception
+                Return Nothing
+            End Try
+
+        Catch ex As OracleException
+            Return Nothing
+        Catch ex As Exception
+            Return Nothing
+        Finally
+        End Try
+    End Function
+
+#Region " OLD Public Function UpdateData(ByVal Strsql As String) As Integer"
+    'Public Function UpdateData(ByVal Strsql As String) As Integer
+
+    '    If String.IsNullOrEmpty(Strsql) Then
+    '        WriteLogFile("SQL->  (No SQL Command)")
+    '        WriteErrLogFile("SQL->  (No SQL Command)")
+    '        Return 0
+    '    End If
+
+    '    Dim myCommand As OracleCommand = cnORA.CreateCommand()
+    '    Dim myTrans As OracleTransaction = Nothing
+
+    '    Try
+    '        WriteLogFile("SQL->  " & Strsql)
+
+    '        cnORA.Open()
+
+    '        ' Start a local transaction
+    '        myTrans = cnORA.BeginTransaction()
+    '        ' Assign transaction object for a pending local transaction
+    '        myCommand.Transaction = myTrans
+
+    '        myCommand.CommandText = Strsql
+    '        Dim c As Integer = myCommand.ExecuteNonQuery()
+    '        myTrans.Commit()
+    '        Return c
+
+    '    Catch ex As Exception
+    '        If myTrans IsNot Nothing Then myTrans.Rollback()
+    '        WriteLogFile(GLOBAL_SQL_ERR_HEADER & ex.Message, LogLvl.Error)
+    '        WriteErrLogFile("SQL-> " & Strsql & vbNewLine & ex.ToString)
+    '    Finally
+    '        cnORA.Close()
+    '    End Try
+    'End Function
+    Public Function UpdateDataO(ByVal Strsql As String) As Integer
+
+        Dim cnORA As OracleConnection = New OracleConnection(strCN)
+        If String.IsNullOrEmpty(Strsql) Then
+            Return 0
+        End If
+
+        Dim myCommand As OracleCommand = cnORA.CreateCommand()
+        Dim myTrans As OracleTransaction = Nothing
+
+        Try
+            'WriteLogFile("SQL->  " & Strsql)
+
+            cnORA.Open()
+
+            ' Start a local transaction
+            myTrans = cnORA.BeginTransaction()
+            ' Assign transaction object for a pending local transaction
+            myCommand.Transaction = myTrans
+
+            myCommand.CommandText = Strsql
+            Dim c As Integer = myCommand.ExecuteNonQuery()
+            myTrans.Commit()
+            Return c
+
+        Catch ex As Exception
+            If myTrans IsNot Nothing Then myTrans.Rollback()
+            Throw ex
+        Finally
+            cnORA.Close()
+        End Try
+        Return 0
+    End Function
+
+    Public Function UpdateDataN(ByVal Strsql As String) As Integer      ' for Simulator
+
+        Dim cnORA As OracleConnection = New OracleConnection(strCN)
+        If String.IsNullOrEmpty(Strsql) Then
+            Return 0
+        End If
+
+        Dim myCommand As OracleCommand = cnORA.CreateCommand()
+        Dim myTrans As OracleTransaction = Nothing
+
+        Try
+            cnORA.Open()
+
+            ' Start a local transaction
+            myTrans = cnORA.BeginTransaction()
+            ' Assign transaction object for a pending local transaction
+            myCommand.Transaction = myTrans
+
+            myCommand.CommandText = Strsql
+            Dim c As Integer = myCommand.ExecuteNonQuery()
+            myTrans.Commit()
+            Return c
+
+        Catch ex As Exception
+            If myTrans IsNot Nothing Then myTrans.Rollback()
+        Finally
+            cnORA.Close()
+        End Try
+        Return 0
+    End Function
+#End Region
+
+    Public Function UpdateData(ByVal Strsql As String, Optional ByVal bRollback As Boolean = True) As Integer
+
+        If String.IsNullOrEmpty(Strsql) Then
+            Return 0
+        End If
+
+        Try
+            'WriteLogFile("SQL->  " & Strsql)
+            Me.myCommand = New OracleCommand(Strsql, cnORA, Me.myTrans)
+            Me.myCommand.CommandType = CommandType.Text
+            'Me.myCommand.CommandText = Strsql
+            Dim c As Integer = myCommand.ExecuteNonQuery()
+            Return c
+        Catch ex As OracleException
+            If bRollback AndAlso myTrans IsNot Nothing Then RollbackTransaction()
+            Return 0
+        Catch ex As Exception
+            If bRollback AndAlso myTrans IsNot Nothing Then RollbackTransaction()
+            Return 0
+        Finally
+        End Try
+    End Function
+
+    Public Function GetScalar(ByVal sql As String) As Object
+        If String.IsNullOrEmpty(sql) Then
+            Throw New ArgumentException("input sql is empty", "sql")
+            Exit Function
+        End If
+
+        Me.myCommand = New OracleCommand(sql, cnORA, Me.myTrans)
+        'Me.myCommand.CommandText = sql
+
+        Try
+            Dim o As Object = Me.myCommand.ExecuteScalar()
+            If TypeOf o Is DBNull Then
+                Return Nothing
+            Else
+                Return o
+            End If
+        Catch ex As Exception
+            Return Nothing
+        Finally
+        End Try
+    End Function
+
+    Public Function RunProcedure(ByVal proc As String, ByVal args As Hashtable) As OraProcResult
+        If String.IsNullOrEmpty(proc) Then
+            Throw New ArgumentException("input procedure name is empty", "proc")
+            Exit Function
+        End If
+
+        Me.myCommand = New OracleCommand(proc, cnORA, Me.myTrans)
+        'Me.myCommand.CommandText = proc
+
+        Try
+            Me.myCommand.CommandType = CommandType.StoredProcedure
+
+            For Each nm As String In args.Keys
+                If TypeOf args(nm) Is String Then
+                    Me.myCommand.Parameters.Add(nm, OracleType.VarChar).Value = args(nm)
+                Else
+                    Me.myCommand.Parameters.Add(nm, OracleType.Number).Value = args(nm)
+                End If
+            Next
+
+            Dim rslt As New OracleParameter("RSLT", OracleType.Number)
+            rslt.Direction = ParameterDirection.Output
+            Me.myCommand.Parameters.Add(rslt)
+
+            Me.myCommand.ExecuteNonQuery()
+
+            Return Me.myCommand.Parameters.Item("RSLT").Value
+        Catch ex As Exception
+            Throw ex
+        Finally
+        End Try
+        Return 0
+    End Function
+
+    Public Function RunProcedureMsg(ByVal proc As String, ByVal args As Hashtable, ByRef pmsg As String) As OraProcResult
+        If String.IsNullOrEmpty(proc) Then
+            Throw New ArgumentException("input procedure name is empty", "proc")
+            Exit Function
+        End If
+
+        Me.myCommand = New OracleCommand(proc, cnORA, Me.myTrans)
+        'Me.myCommand.CommandText = proc
+
+        Try
+
+            Me.myCommand.CommandType = CommandType.StoredProcedure
+
+            For Each nm As String In args.Keys
+                If TypeOf args(nm) Is String Then
+                    Me.myCommand.Parameters.Add(nm, OracleType.VarChar).Value = args(nm)
+                Else
+                    Me.myCommand.Parameters.Add(nm, OracleType.Number).Value = args(nm)
+                End If
+            Next
+
+            Dim rmsg As New OracleParameter("RMSG", OracleType.VarChar)
+            rmsg.Direction = ParameterDirection.Output
+            rmsg.Size = 100
+            Me.myCommand.Parameters.Add(rmsg)
+
+            Dim rslt As New OracleParameter("RSLT", OracleType.Number)
+            rslt.Direction = ParameterDirection.Output
+            Me.myCommand.Parameters.Add(rslt)
+
+            Me.myCommand.ExecuteNonQuery()
+
+            RunProcedureMsg = Me.myCommand.Parameters.Item("RSLT").Value
+
+            Dim o As Object = Me.myCommand.Parameters.Item("RMSG").Value
+            If Not TypeOf o Is DBNull Then
+                pmsg = o.ToString
+            End If
+        Catch ex As Exception
+            Throw ex
+        Finally
+        End Try
+        Return 0
+    End Function
+
+#Region " Select JSON "
+
+    Public Function GetJson(ByVal Strsql As String) As String
+
+        If String.IsNullOrEmpty(Strsql) Then
+            Return Nothing
+        End If
+
+        Dim JsonString As String = String.Empty
+        Using cnORA As New OracleConnection(strCN)
+            Dim MyDT As New DataTable
+            MyDT.TableName = "0"
+            Try
+                Using daORA As New OracleDataAdapter(Strsql, cnORA)
+                    daORA.Fill(MyDT) ' 將資料填至資料表
+                    If MyDT IsNot Nothing Then
+                        If MyDT.Rows.Count > 0 Then
+                            For Each r As DataRow In MyDT.Rows
+                                For i As Integer = 0 To MyDT.Columns.Count - 1
+                                    If IsDBNull(r.Item(i)) Then
+                                        Try
+                                            If MyDT.Columns(i).DataType.ToString = "System.Decimal" Then
+                                                r.Item(i) = 0
+                                            ElseIf MyDT.Columns(i).DataType.ToString = "System.String" Then
+                                                r.Item(i) = ""
+                                            ElseIf MyDT.Columns(i).DataType.ToString = "System.DateTime" Then
+
+                                            Else
+                                                r.Item(i) = ""
+                                            End If
+                                        Catch ex As Exception
+                                            r.Item(i) = ""
+                                        End Try
+                                    End If
+                                Next
+                            Next
+                            '2015-06-30 Motech Json
+                            JsonString = ObjJson.JsonWrite(MyDT)
+                        ElseIf MyDT.Rows.Count = 0 Then
+                            '2015-06-30 Motech Json
+                            JsonString = ObjJson.JsonWrite(MyDT)
+                            ''必須要回傳特定的欄位字串讓CMMSLib可以轉回含欄位的DataTable
+                            'Dim ht As New Hashtable
+                            'For Each sCol As DataColumn In MyDT.Columns
+                            '    If sCol.DataType.FullName = "System.Decimal" Then
+                            '        ht.Add(sCol.ColumnName, GetType(System.Double))
+                            '    Else
+                            '        ht.Add(sCol.ColumnName, sCol.DataType.FullName)
+                            '    End If
+                            'Next
+                            'JsonString = CMMSlib.ObjWS.EmptyDataColumn & GetJson(ht)
+                        End If
+                    End If
+                End Using
+            Catch ex As Exception
+                Throw ex
+                Return Nothing
+            Finally
+                cnORA.Close()
+            End Try
+            Return JsonString
+
+        End Using
+
+    End Function
+
+    Public Function GetJSONFilter(ByVal Strsql As String, ByVal filter As String) As String
+        GetJSONFilter = Nothing
+
+        Dim JsonString As String = String.Empty
+        Using cnORA As New OracleConnection(strCN)
+            Dim MyDT As New DataTable
+            Try
+                Using daORA As New OracleDataAdapter(Strsql, cnORA)
+                    daORA.Fill(MyDT) ' 將資料填至資料表
+                    If MyDT IsNot Nothing Then
+                        If MyDT.Rows.Count > 0 Then
+                            Dim dv As DataView = MyDT.DefaultView
+                            dv.RowFilter = filter
+                            '2015-06-30 Motech Json
+                            JsonString = ObjJson.JsonWrite(dv.ToTable)
+                        ElseIf MyDT.Rows.Count = 0 Then
+                            '2015-06-30 Motech Json
+                            JsonString = ObjJson.JsonWrite(MyDT)
+                            ''必須要回傳特定的欄位字串讓CMMSLib可以轉回含欄位的DataTable
+                            'Dim ht As New Hashtable
+                            'For Each sCol As DataColumn In MyDT.Columns
+                            '    If sCol.DataType.FullName = "System.Decimal" Then
+                            '        ht.Add(sCol.ColumnName, GetType(System.Double))
+                            '    Else
+                            '        ht.Add(sCol.ColumnName, sCol.DataType.FullName)
+                            '    End If
+                            'Next
+                            'JsonString = CMMSlib.ObjWS.EmptyDataColumn & GetJson(ht)
+                        End If
+                    End If
+                End Using
+            Catch ex As Exception
+                Throw ex
+            Finally
+                cnORA.Close()
+            End Try
+            Return JsonString
+
+        End Using
+
+    End Function
+
+    Private Function GetJson(ByVal dt As DataTable) As String
+        Try
+            Dim jStr As String = JsonConvert.SerializeObject(dt, Formatting.None)
+            Return jStr
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return String.Empty
+    End Function
+
+    Private Function GetJson(ByVal ht As Hashtable) As String
+        Try
+            Dim jStr As String = JsonConvert.SerializeObject(ht)
+            Return jStr
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return String.Empty
+    End Function
+
+#End Region
+
+End Class
