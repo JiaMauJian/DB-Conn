@@ -1,0 +1,76 @@
+Imports System.IO
+Imports System.Threading
+
+Public Module LogFunction
+
+    Public Enum LogLvl As Integer
+        High = 0
+        [Error] = 1
+        Warn = 2
+        [Event] = 3
+        Normal = 4
+        Low = 5
+    End Enum
+
+    Private MUT_TIMEOUT As Integer = 5000
+
+    Public Sub WriteLogFile(ByVal vMsg As String, Optional ByVal loglvl As LogLvl = LogLvl.Normal, Optional ByVal station As String = "", Optional ByVal func As String = "")
+
+        GLOBAL_ClientName = GetClientName()
+        If String.IsNullOrEmpty(GLOBAL_ClientName) Then Exit Sub
+        'Dim vFile As String = GLOBAL_LOG_MAN_PATH & Format(Now(), "yyyyMMddHH") & "_" & GLOBAL_ClientName & ".log"
+        Dim LogPath As String = String.Format("{0}\{1}", Global_Log, Now.ToString("yyyyMMddHH"))
+        Dim vFile As String = String.Format("{0}\{1}_{2}.log", LogPath, Format(Now(), "yyyyMMddHH"), GLOBAL_ClientName)
+        If Not Directory.Exists(vFile) Then Directory.CreateDirectory(LogPath)
+
+        Dim acq As Boolean
+        Dim mut As Mutex = Nothing
+
+        Try
+            mut = New Mutex(False, "Global\PmsLog" & GLOBAL_ClientName)
+
+            acq = mut.WaitOne(MUT_TIMEOUT, True)       '加鎖
+
+            Using sw As New StreamWriter(vFile, True)
+                sw.AutoFlush = True
+                If loglvl > LogFunction.LogLvl.Warn Then
+                    sw.WriteLine(Format(Now(), "yyyy/MM/dd HH:mm:ss.fff") & " " & vMsg)
+                Else
+                    sw.WriteLine(Format(Now(), "yyyy/MM/dd HH:mm:ss.fff") & " [" & loglvl.ToString & "] " & vMsg)
+                End If
+            End Using
+        Catch ex As Exception
+
+        Finally
+            If acq Then mut.ReleaseMutex() '解鎖
+        End Try
+    End Sub
+
+    Public Sub WriteErrLogFile(ByVal vMsg As String)
+
+        GLOBAL_ClientName = GetClientName()
+        If String.IsNullOrEmpty(GLOBAL_ClientName) Then Exit Sub
+        Dim LogPath As String = String.Format("{0}\{1}", Global_Log, Now.ToString("yyyyMMddHH"))
+        Dim vFile As String = String.Format("{0}\{1}_{2}_Err.log", LogPath, Format(Now(), "yyyyMMddHH"), GLOBAL_ClientName)
+
+        Dim acq As Boolean
+        Dim mut As Mutex = Nothing
+
+        Try
+            mut = New Mutex(False, "Global\PmsLog" & GLOBAL_ClientName)
+
+            acq = mut.WaitOne(MUT_TIMEOUT, True)       '加鎖
+
+            Using sw As New StreamWriter(vFile, True)
+                sw.AutoFlush = True
+                sw.WriteLine(Format(Now(), "yyyy/MM/dd HH:mm:ss.fff") & " " & vMsg)
+            End Using
+
+        Catch ex As Exception
+
+        Finally
+            If acq Then mut.ReleaseMutex() '解鎖
+        End Try
+    End Sub
+
+End Module
