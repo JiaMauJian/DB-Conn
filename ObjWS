@@ -1,0 +1,786 @@
+
+Imports Newtonsoft.Json
+Imports Newtonsoft.Json.Linq
+Imports System.Text
+Imports System.IO
+
+Public Class ObjWS
+    Implements IDisposable
+
+    Private _WebReTryMax As Integer = 3
+
+#Region " IDisposable Support "
+
+    Private disposed As Boolean = False
+
+    ' IDisposable
+    Protected Overridable Sub Dispose(ByVal disposing As Boolean)
+        If Not Me.disposed Then
+            If disposing Then
+                ' TODO: 明確呼叫時釋放 Unmanaged 資源
+            End If
+            ' TODO: 釋放共用的 Unmanaged 資源
+        End If
+        Me.disposed = True
+    End Sub
+
+    ' 由 Visual Basic 新增此程式碼以正確實作可處置的模式。
+    Public Sub Dispose() Implements IDisposable.Dispose
+        ' 請勿變更此程式碼。在以上的 Dispose 置入清除程式碼 (ByVal 視為布林值處置)。
+        Dispose(True)
+        GC.SuppressFinalize(Me)
+    End Sub
+
+#End Region
+
+#Region " Web Service "
+
+    Protected Friend Shared pWsObj As MESSvr.Service = Nothing
+    Public Shared ReadOnly Property WebService As MESSvr.Service
+        Get
+            If pWsObj Is Nothing Then pWsObj = New MESSvr.Service
+            Return pWsObj
+        End Get
+    End Property
+
+    Public Shared WriteOnly Property WebServiveAdr As String
+        Set(value As String)
+            My.Settings.MESLib_MESSvr_Service = value
+            ObjWS.pWsObj = New MESSvr.Service
+        End Set
+    End Property
+
+    Public Shared WriteOnly Property Timeout As Integer
+        Set(value As Integer)
+            ObjWS.pWsObj.Timeout = value
+        End Set
+    End Property
+
+#End Region
+
+#Region " JSON Method "
+
+    Public Shared EmptyDataColumn As String = "[COLUMNS]"
+
+    Public Shared Function QueryDataTable(ByVal sql As String, ByVal commands As Hashtable) As DataTable
+        Dim dt As New DataTable
+        Try
+            Dim jSonString As String = GetJsonString(sql, commands)
+            If jSonString.Trim.Length > 0 Then dt = JSON2DataTable(jSonString)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return dt
+    End Function
+
+    Public Shared Function QueryDataTable(ByVal sql As String) As DataTable
+        Dim dt As New DataTable
+        Try
+            Dim jSonString As String = GetJsonString(sql)
+            If jSonString.Trim.Length > 0 Then dt = JSON2DataTable(jSonString)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return dt
+    End Function
+
+    Public Shared Function QueryDataTable(ByVal sql As String, ByVal filter As String) As DataTable
+        Dim dt As New DataTable
+        Try
+            Dim jSonString As String = String.Empty
+            jSonString = GetJsonStringFilter(sql, filter)
+            If jSonString.Trim.Length > 0 Then dt = JSON2DataTable(jSonString)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return dt
+    End Function
+
+    Public Shared Function QueryDataSet(ByVal sql As String) As DataSet
+        Dim myDS As New DataSet
+        Dim dt As DataTable
+        Try
+            Dim iNmame As Integer = 0
+            Dim jSonString As String = GetJsonString(sql)
+            If jSonString.Trim.Length > 0 Then
+                dt = JSON2DataTable(jSonString)
+                dt.TableName = iNmame.ToString
+                myDS.Tables.Add(dt)
+                iNmame += 1
+            End If
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return myDS
+    End Function
+
+    Public Shared Function QueryDataSet(ByVal sql As String, ByVal filter As String) As DataSet
+        Dim myDS As New DataSet
+        Dim dt As DataTable
+        Try
+            Dim iNmame As Integer = 0
+            Dim jsonString As String = String.Empty
+            jsonString = GetJsonStringFilter(sql, filter)
+            If jsonString.Trim.Length > 0 Then
+                dt = JSON2DataTable(jsonString)
+                dt.TableName = iNmame.ToString
+                myDS.Tables.Add(dt)
+                iNmame += 1
+            End If
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return myDS
+    End Function
+
+    Public Shared Function GetJsonString(ByVal sql As String) As String
+        Try
+            Return pWsObj.GetJsonString(sql)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return String.Empty
+    End Function
+
+    Public Shared Function GetJsonStringFilter(ByVal sql As String, ByVal filter As String) As String
+        Try
+            Return pWsObj.GetJsonStringFilter(sql, filter)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return String.Empty
+    End Function
+
+    Public Shared Function GetJsonString(ByVal sql As String, ByVal commands As Hashtable) As String
+        Try
+            Dim clib As New MSG_MESSAGE()
+            clib.SetHeader(MSG_DEF_S000_07.MsgId, String.Empty, String.Empty, NowTimeStr, SysVersion)
+            clib.SetContent(MSG_DEF_S000_07.SQL, sql)
+            Dim iCnt As Integer = 0
+            For Each nm As String In commands.Keys
+                iCnt += 1
+                clib.SetContent(MSG_DEF_S000_07.argName, nm, iCnt)
+                clib.SetContent(MSG_DEF_S000_07.argValue, commands(nm), iCnt)
+            Next
+            clib.SetContent(MSG_DEF_S000_07.GrpCount, iCnt)
+            Return (pWsObj.GetJsonStringParameters(clib.Content))
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return String.Empty
+    End Function
+
+#End Region
+
+#Region " JSON TOOL "
+
+    Public Shared Function JSON2DataTable(ByVal jsonStr As String) As DataTable
+        Try
+            'If jsonStr.StartsWith(EmptyDataColumn) Then
+            '    Return JSON2EmptyDataTable(jsonStr.Replace(EmptyDataColumn, String.Empty))
+            'Else
+            '    Return JsonConvert.DeserializeObject(Of DataTable)(jsonStr)
+            'End If
+            '2015-06-30 Motehc JSON
+            Return ObjJson.JsonRead(jsonStr)
+        Catch ex As Exception
+        End Try
+        Return Nothing
+    End Function
+
+    Public Shared Function JSON2HashTable(ByVal jsonStr As String) As List(Of Hashtable)
+        Dim htList As New List(Of Hashtable)
+        Try
+            'Dim GetDataArray As JArray = JsonConvert.DeserializeObject(Of JArray)(jsonStr)
+            'For Each jObj As JObject In GetDataArray
+            '    Dim ht As New Hashtable
+            '    For Each GetJProperty As JProperty In jObj.Properties
+            '        ht.Add(GetJProperty.Name, GetJProperty.Value)
+            '    Next
+            '    htList.Add(ht)
+            'Next
+            htList = ObjJson.JsonReadToHashTable(jsonStr)
+        Catch ex As Exception
+        End Try
+        Return htList
+    End Function
+
+    'Private Shared Function JSON2EmptyDataTable(ByVal jsonString As String) As DataTable
+    '    Dim dt As New DataTable
+    '    Try
+    '        Dim jObj As JObject = JsonConvert.DeserializeObject(jsonString)
+    '        Dim ht As New Hashtable
+    '        For Each jPro As JProperty In jObj.Properties
+    '            'ht.Add(GetJProperty.Name, GetJProperty.Value)
+    '            dt.Columns.Add(jPro.Name, Type.GetType(jPro.Value))
+    '        Next
+    '        'Dim htJson As Hashtable = JsonConvert.DeserializeObject(Of Hashtable)(jsonString)
+    '        'Dim iEum As IDictionaryEnumerator = htJson.GetEnumerator
+    '        'While iEum.MoveNext
+    '        '    dt.Columns.Add(iEum.Key, Type.GetType(iEum.Value))
+    '        'End While
+    '    Catch ex As Exception
+    '    End Try
+    '    Return dt
+    'End Function
+
+#End Region
+
+#Region " DataTable Tool "
+
+    Protected Shared Function QueryHashtableList(ByVal sql As String) As List(Of Hashtable)
+        Dim JsonString As String = pWsObj.GetJsonString(sql)
+        Return JSON2HashTable(JsonString)
+    End Function
+
+    Protected Shared Function QueryHashtable(ByVal sql As String) As Hashtable
+        Dim JsonString As String = pWsObj.GetJsonString(sql)
+        Dim htList As List(Of Hashtable) = JSON2HashTable(JsonString)
+        If htList.Count > 0 Then Return htList(0) Else Return New Hashtable
+    End Function
+
+    'Protected Shared Function QueryHashtableList(ByVal sql As String) As List(Of Hashtable)
+    '    Dim dt As DataTable = QueryDataTable(sql)
+    '    Return DataTableToHashTable(dt)
+    'End Function
+
+    'Protected Shared Function QueryHashtable(ByVal sql As String) As Hashtable
+    '    Dim dt As DataTable = QueryDataTable(sql)
+    '    Dim htList As List(Of Hashtable) = DataTableToHashTable(dt)
+    '    If htList.Count > 0 Then Return htList(0) Else Return Nothing
+    'End Function
+
+    'Protected Shared Function DataTableToHashTable(ByVal dt As DataTable) As List(Of Hashtable)
+    '    Dim htList As New List(Of Hashtable)
+    '    Try
+    '        For Each eRow As DataRow In dt.Rows
+    '            Dim ht As New Hashtable
+    '            For Each eCol As DataColumn In dt.Columns
+    '                ht.Add(eCol.ColumnName, eRow.Item(eCol.ColumnName))
+    '            Next
+    '            htList.Add(ht)
+    '        Next
+    '    Catch ex As Exception
+    '    End Try
+    '    Return htList
+    'End Function
+
+#End Region
+
+#Region " OTH Server Service "
+
+    Public Shared Function Act(ByVal content As DataSet) As String
+        Dim rlt As New ExcuteResult
+        Try
+            Return pWsObj.Act(content)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Function
+
+    Public Shared Sub ActAsync(ByVal content As DataSet)
+        Dim rlt As New ExcuteResult
+        Try
+            pWsObj.ActAsync(content)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Sub
+
+    Public Shared Function GetScalar(ByVal sql As String) As Object
+        Dim rlt As New ExcuteResult
+        Try
+            Return pWsObj.GetScalar(sql)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Function
+
+    Public Shared Function UpdateData(ByVal sql As String) As Boolean
+        Try
+            Return pWsObj.UpdateData(sql)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Function
+
+    Public Shared Function UpdateDataO(ByVal sql As String) As Boolean
+        Try
+            Return pWsObj.UpdateDataO(sql)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Function
+
+    Public Shared Function UpdateDataNoLog(ByVal sql As String) As Boolean
+        Try
+            Return pWsObj.UpdateDataN(sql)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+    End Function
+
+    'Private Function QueryDataTable(ByVal sql As String, ByVal filter As String) As DataTable
+    '    Try
+    '        Dim ds As DataSet = pWsObj.BinDataSet(sql, filter)
+    '        If ds IsNot Nothing AndAlso ds.Tables.Count > 0 AndAlso ds.Tables(0) IsNot Nothing Then
+    '            Return ds.Tables(0)
+    '        End If
+    '    Catch exweb As System.Net.WebException
+    '        Throw exweb
+    '    Catch exsoap As System.Web.Services.Protocols.SoapException
+    '        Throw exsoap
+    '    Catch ex As Exception
+    '        Throw ex
+    '    End Try
+    '    Return Nothing
+    'End Function
+
+    Public Shared Function BindDataSet(ByVal sql As String) As DataSet
+        Try
+            Return pWsObj.BindDataSet(sql)
+        Catch exweb As System.Net.WebException
+            Throw exweb
+        Catch exsoap As System.Web.Services.Protocols.SoapException
+            Throw exsoap
+        Catch ex As Exception
+            Throw ex
+        End Try
+        Return Nothing
+    End Function
+
+#End Region
+
+    'Public Shared Function QueryDataTable(ByVal sql As String) As DataTable
+    '    Try
+    '        Dim ds As DataSet = pWsObj.BinDataSet(sql)
+    '        If ds IsNot Nothing AndAlso ds.Tables.Count > 0 AndAlso ds.Tables(0) IsNot Nothing Then
+    '            Return ds.Tables(0)
+    '        End If
+    '    Catch exweb As System.Net.WebException
+    '        Throw exweb
+    '    Catch exsoap As System.Web.Services.Protocols.SoapException
+    '        Throw exsoap
+    '    Catch ex As Exception
+    '        Throw ex
+    '    End Try
+    '    Return Nothing
+    'End Function
+
+    'Public Shared Function QueryDataSet(ByVal sql As String) As DataSet
+    '    Try
+    '        Return pWsObj.BinDataSet(sql)
+    '    Catch exweb As System.Net.WebException
+    '        Throw exweb
+    '    Catch exsoap As System.Web.Services.Protocols.SoapException
+    '        Throw exsoap
+    '    Catch ex As Exception
+    '        Throw ex
+    '    End Try
+    '    Return Nothing
+    'End Function
+
+    '' <param name="invalid">when result is invalid, function returns Nothing; otherwise Empty String is returned</param>
+    'Protected Overloads Function QueryString(ByVal sql As String, ByVal invalid As Boolean) As String
+    '    Dim s As Object
+
+    '    For n As Integer = 0 To _WebReTryMax
+    '        Try
+    '            s = pWsObj.GetScalar(sql)
+    '            If s Is Nothing Then
+    '                Exit For
+    '            Else
+    '                Return CStr(s)
+    '            End If
+    '        Catch exweb As System.Net.WebException
+    '            If n = _WebReTryMax Then Throw exweb
+    '        Catch exsoap As System.Web.Services.Protocols.SoapException
+    '            If n = _WebReTryMax Then Throw exsoap
+    '        Catch ex As Exception
+    '            Throw ex
+    '            Exit For
+    '        End Try
+    '    Next
+    '    If invalid Then
+    '        Return Nothing
+    '    Else
+    '        Return String.Empty
+    '    End If
+    'End Function
+
+    'Protected Overloads Function QueryNumber(ByVal sql As String) As Decimal
+    '    Return QueryNumber(sql, False)
+    'End Function
+
+    ' ''' <param name="invalid">when result is invalid, function returns -1; otherwise 0 is returned</param>
+    'Protected Overloads Function QueryNumber(ByVal sql As String, ByVal invalid As Boolean) As Decimal
+    '    Dim i As Object
+
+    '    For n As Integer = 0 To _WebReTryMax
+    '        Try
+    '            i = pWsObj.GetScalar(sql)
+    '            If i IsNot Nothing AndAlso IsNumeric(i) Then
+    '                Return CDec(i)
+    '            Else
+    '                Exit For
+    '            End If
+    '        Catch exweb As System.Net.WebException
+    '            If n = _WebReTryMax Then Throw exweb
+    '        Catch exsoap As System.Web.Services.Protocols.SoapException
+    '            If n = _WebReTryMax Then Throw exsoap
+    '        Catch ex As Exception
+    '            Throw ex
+    '            Exit For
+    '        End Try
+    '    Next
+    '    If invalid Then
+    '        Return -1
+    '    Else
+    '        Return 0
+    '    End If
+    'End Function
+
+    'Protected Overloads Function QueryInteger(ByVal sql As String) As Integer
+    '    Return QueryInteger(sql, False)
+    'End Function
+
+    ' ''' <param name="invalid">when result is invalid, function returns -1; otherwise 0 is returned</param>
+    'Protected Overloads Function QueryInteger(ByVal sql As String, ByVal invalid As Boolean) As Integer
+    '    Dim i As Object
+
+    '    For n As Integer = 0 To _WebReTryMax
+    '        Try
+    '            i = pWsObj.GetScalar(sql)
+    '            If i IsNot Nothing AndAlso IsNumeric(i) Then
+    '                Return CInt(i)
+    '            Else
+    '                Exit For
+    '            End If
+    '        Catch exweb As System.Net.WebException
+    '            If n = _WebReTryMax Then Throw exweb
+    '        Catch exsoap As System.Web.Services.Protocols.SoapException
+    '            If n = _WebReTryMax Then Throw exsoap
+    '        Catch ex As Exception
+    '            Throw ex
+    '            Exit For
+    '        End Try
+    '    Next
+
+    '    If invalid Then
+    '        Return -1
+    '    Else
+    '        Return 0
+    '    End If
+    'End Function
+
+End Class
+
+Public Class ObjJson
+
+    Public Shared Function JsonWrite(ByVal table As DataTable) As String
+        Dim sb As StringBuilder = New StringBuilder()
+        Dim sw As StringWriter = New StringWriter(sb)
+        Try
+            Dim jsonObj As New ObjJson.JsonDataTableConverter
+            Dim jWrite As JsonWriter = New JsonTextWriter(sw)
+            Dim serializer As New JsonSerializer()
+            jsonObj.WriteJson(jWrite, table, serializer)
+            Return sb.ToString
+        Catch ex As Exception
+        End Try
+        Return String.Empty
+    End Function
+
+    Public Shared Function JsonRead(ByVal JsonString As String) As DataTable
+        Dim sr As StringReader = New StringReader(JsonString)
+        Try
+            Dim jsonObj As New ObjJson.JsonDataTableConverter
+            Dim jReader As JsonReader = New JsonTextReader(sr)
+            Dim serializer As New JsonSerializer()
+            Return jsonObj.ReadJson(jReader, Nothing, Nothing, serializer)
+        Catch ex As Exception
+        End Try
+        Return Nothing
+    End Function
+
+    Public Shared Function JsonReadToHashTable(ByVal JsonString As String) As List(Of Hashtable)
+        Dim sr As StringReader = New StringReader(JsonString)
+        Try
+            Dim jsonObj As New ObjJson.JsonDataTableConverter
+            Dim jReader As JsonReader = New JsonTextReader(sr)
+            Dim serializer As New JsonSerializer()
+            Return jsonObj.ReadJsonToHashTable(jReader, serializer)
+        Catch ex As Exception
+        End Try
+        Return Nothing
+    End Function
+
+    Public Class JsonDataTableConverter
+        Inherits JsonConverter
+
+        Public Overrides Function CanConvert(ByVal valueType As Type) As Boolean
+            Return (valueType Is GetType(DataTable))
+        End Function
+
+        Public Overrides Sub WriteJson(ByVal writer As JsonWriter, ByVal value As Object, ByVal serializer As JsonSerializer)
+
+            Dim table As DataTable = CType(value, DataTable)
+
+            writer.WriteStartObject()
+            writer.WritePropertyName("Columns")
+
+            'serialize metadata (column names)
+            writer.WriteStartArray()
+
+            For Each column As DataColumn In table.Columns
+                writer.WriteStartObject()
+                writer.WritePropertyName("Name")
+                serializer.Serialize(writer, column.ColumnName)
+
+                writer.WritePropertyName("Type")
+                serializer.Serialize(writer, column.DataType.Name)
+                writer.WriteEndObject()
+            Next
+            writer.WriteEndArray()
+
+            writer.WritePropertyName("Rows")
+            'deserialize data
+            writer.WriteStartArray()
+
+            For Each row As DataRow In table.Rows
+                writer.WriteStartArray()
+                For Each column As DataColumn In row.Table.Columns
+                    serializer.Serialize(writer, row(column))
+                Next
+                writer.WriteEndArray()
+            Next
+            writer.WriteEndArray()
+            writer.WriteEndObject()
+
+        End Sub
+
+        Public Overrides Function ReadJson(ByVal reader As JsonReader, ByVal objectType As Type, ByVal existingValue As Object, ByVal serializer As JsonSerializer) As Object
+            Dim dt As DataTable
+
+            If (reader.TokenType = JsonToken.PropertyName) Then
+                dt = New DataTable(reader.Value.ToString)
+            Else
+                dt = New DataTable()
+            End If
+
+            reader.Read()
+            While reader.TokenType <> JsonToken.PropertyName
+                reader.Read()
+            End While
+
+            If reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Columns" Then
+                reader.Read()
+                While (reader.TokenType = JsonToken.StartArray)
+                    reader.Read()
+                    While (reader.TokenType <> JsonToken.EndArray)
+                        reader.Read()
+                        Dim columnName As String = Nothing
+                        Dim columnType As Type = Nothing
+                        If (reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Name") Then
+                            reader.Read()
+                            columnName = reader.Value.ToString()
+                            reader.Read()
+                        End If
+
+                        If (reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Type") Then
+                            reader.Read()
+                            columnType = GetColumnDataType(reader.Value.ToString())
+                            reader.Read()
+                        End If
+
+                        If (columnName Is Nothing OrElse columnType Is Nothing) Then
+                            Throw New JsonSerializationException("Invalid DataTable column definition.")
+                        End If
+                        dt.Columns.Add(New DataColumn(columnName, columnType))
+                        reader.Read()
+                    End While
+                    reader.Read()
+                End While
+            End If
+
+            If reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Rows" Then
+                reader.Read()
+                If (reader.TokenType = JsonToken.StartArray) Then
+                    reader.Read()
+                    'populate rows
+                    While (reader.TokenType = JsonToken.StartArray)
+                        reader.Read()
+                        Dim dr As DataRow = dt.NewRow()
+                        Dim i As Integer = 0
+                        While (reader.TokenType <> JsonToken.EndArray)
+                            dr.Item(i) = IIf(reader.Value Is Nothing, DBNull.Value, reader.Value)
+                            i += 1
+                            reader.Read()
+                        End While
+                        dr.EndEdit()
+                        dt.Rows.Add(dr)
+                        reader.Read()
+                    End While
+                    reader.Read()
+                    'EndArray
+                End If
+                reader.Read()
+                'EndObject()
+            End If
+            Return dt
+        End Function
+
+        Public Function ReadJsonToHashTable(ByVal reader As JsonReader, ByVal serializer As JsonSerializer) As List(Of Hashtable)
+            Dim htList As New List(Of Hashtable)
+
+            reader.Read()
+            While Not (reader.TokenType = JsonToken.PropertyName)
+                reader.Read()
+            End While
+
+            Dim columns As New ArrayList
+            If reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Columns" Then
+                reader.Read()
+                While (reader.TokenType = JsonToken.StartArray)
+                    reader.Read()
+                    While (reader.TokenType <> JsonToken.EndArray)
+                        reader.Read()
+                        Dim columnName As String = Nothing
+                        Dim columnType As Type = Nothing
+                        If (reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Name") Then
+                            reader.Read()
+                            columnName = reader.Value.ToString()
+                            reader.Read()
+                        End If
+
+                        If (reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Type") Then
+                            reader.Read()
+                            columnType = GetColumnDataType(reader.Value.ToString())
+                            reader.Read()
+                        End If
+
+                        If (columnName Is Nothing OrElse columnType Is Nothing) Then
+                            Throw New JsonSerializationException("Invalid DataTable column definition.")
+                        End If
+                        columns.Add(columnName)
+                        reader.Read()
+                    End While
+                    reader.Read()
+                End While
+            End If
+
+            If reader.TokenType = JsonToken.PropertyName AndAlso reader.Value.GetType.ToString = "System.String" AndAlso reader.Value.ToString = "Rows" Then
+                reader.Read()
+                If (reader.TokenType = JsonToken.StartArray) Then
+                    reader.Read()
+                    'populate rows
+                    While (reader.TokenType = JsonToken.StartArray)
+                        reader.Read()
+                        Dim ht As New Hashtable
+                        Dim i As Integer = 0
+                        While (reader.TokenType <> JsonToken.EndArray AndAlso (i + 1) <= columns.Count)
+                            ht.Add(columns(i), IIf(reader.Value Is Nothing, DBNull.Value, reader.Value))
+                            i += 1
+                            reader.Read()
+                        End While
+                        htList.Add(ht)
+                        reader.Read()
+                    End While
+                    reader.Read()
+                    'EndArray
+                End If
+                reader.Read()
+                'EndObject()
+            End If
+            Return htList
+
+        End Function
+
+        Private Shared Function GetColumnDataType(ByVal dataType As String) As Type
+            Try
+                Select Case dataType
+                    Case "Int16"
+                        Return GetType(System.Int16)
+                    Case "Int32"
+                        Return GetType(System.Int32)
+                    Case "Int64"
+                        Return GetType(System.Int64)
+                    Case "String"
+                        Return GetType(System.String)
+                    Case "DateTime"
+                        Return GetType(System.DateTime)
+                    Case "Decimal"
+                        Return GetType(System.Decimal)
+                    Case "Boolean"
+                        Return GetType(System.Boolean)
+                    Case "Double"
+                        Return GetType(System.Double)
+                    Case "Single"
+                        Return GetType(System.Single)
+                    Case Else
+                        Throw New ArgumentException(String.Format("Data set column type '{0}' is not implemented for JSON deserialization.", dataType))
+                End Select
+            Catch ex As Exception
+            End Try
+            Return Nothing
+        End Function
+
+    End Class
+
+End Class
