@@ -1,0 +1,43 @@
+Imports System.Data.SqlClient
+
+Public Function QueryLatestLotNo(ByVal IP As String) As DataTable
+        Dim sqlconn As SqlConnection = Nothing
+        Dim sqlcmd As SqlCommand = Nothing
+        Dim dr As SqlDataReader = Nothing
+        Dim dt As New DataTable
+        Dim strConn As String = String.Format("Server={0};Database={1};User ID={2};Password={3};", IP, EL_DBName, UserID, Password)
+        Dim strSQL As String = String.Format("SELECT TOP (1) LOTNO, CREATEDATE FROM {0} ORDER BY CREATEDATE DESC", EL_TableName1)
+        Try
+            sqlconn = New SqlConnection(strConn)
+            sqlconn.Open()
+            sqlcmd = New SqlCommand(strSQL, sqlconn)
+            dr = sqlcmd.ExecuteReader()
+            dt.TableName = "EL"
+            dt.Load(dr)
+
+            If dt.Rows.Count > 0 Then
+                WriteLogFile(IP & ", LOTNO = " & dt.Rows(0).Item("LOTNO") & ", CREATEDATE = " & dt.Rows(0).Item("CREATEDATE"))
+            End If
+
+            Return dt
+
+        Catch ex As Exception
+            WriteLogFile(ex.ToString, LogLvl.Error)
+            Return Nothing
+        Finally
+            If Not IsNothing(dr) Then
+                dr.Close()
+                dr = Nothing
+            End If
+            If Not IsNothing(sqlconn) Then
+                sqlconn.Close()
+                sqlconn.Dispose()
+                sqlconn = Nothing
+            End If
+            If Not IsNothing(sqlcmd) Then
+                sqlcmd.Dispose()
+                sqlcmd = Nothing
+            End If
+            dt = Nothing
+        End Try
+    End Function
